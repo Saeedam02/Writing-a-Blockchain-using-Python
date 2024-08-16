@@ -1,6 +1,9 @@
 import json
+import sys
 import hashlib
 from time import time 
+from uuid import uuid4
+from flask import Flask, jsonify
 
 class BlockChain():
     ''' Define a block chain on one Machine'''
@@ -56,3 +59,32 @@ class BlockChain():
         while self.valid_proof(last_proof, proof) is False:
             proof +=1
         return proof
+    
+app = Flask(__name__)
+
+node_id = str(uuid4())
+
+blockchain = BlockChain()
+
+@app.route('/mine')
+def mine():
+    ''' This will mibe a block and 
+    will add it to the chain
+    '''
+    return "I will Mine!"
+
+@app.route('/trxs/new', methods=['POST'])
+def new_trx():
+    ''' will add a new trx'''
+    return ' a new trx added'
+
+def full_chain():
+    ''' Return the full chain'''
+    res = {
+        'chain' : blockchain.chain,
+        'length' : len(blockchain.chain),
+    }
+    return jsonify(res), 200 # 200 means that our code works currectly
+
+if __name__ == '__main__' :
+    app.run(host='0.0.0.0', port=sys.argv[1])
