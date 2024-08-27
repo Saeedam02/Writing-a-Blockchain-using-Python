@@ -3,7 +3,7 @@ import sys
 import hashlib
 from time import time 
 from uuid import uuid4
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 class BlockChain():
     ''' Define a block chain on one Machine'''
@@ -44,7 +44,7 @@ class BlockChain():
     @property
     def last_block(self):
         ''' Return the last Block'''
-        pass
+        return self.chain[-1]
 
     @staticmethod
     def valid_proof(last_proof, proof):
@@ -66,17 +66,37 @@ node_id = str(uuid4())
 
 blockchain = BlockChain()
 
-@app.route('/mine')
+@app.route('/mine' , methods=['Get'])
 def mine():
     ''' This will mibe a block and 
     will add it to the chain
     '''
-    return "I will Mine!"
+    last_block = blockchain.last_block
+    last_proof = last_block['proof']
+    proof = blockchain.proof_of_work(last_proof)
+
+
+    blockchain.new_trx(sender="0", recipient=node_id, amount=50)
+    
+    previous_hash = blockchain.hash(last_block)
+    block = blockchain.new_block(proof , previous_hash)
+
+    response = {
+        'message': 'new block created',
+        'index' : block['index'],
+        'trxs' : block['trxs'],
+        'proof' : block['proof'],
+        'previous_hash' : block['previous_hash'],
+    }
+    return jsonify(response) , 200
 
 @app.route('/trxs/new', methods=['POST'])
 def new_trx():
-    ''' will add a new trx'''
-    return ' a new trx added'
+    ''' will add a new trx by getting sender, recipient , amount'''
+    values = request.get_json()
+    this_block = blockchain.new_trx(values['sender'],values['recipient'], values['amount'])
+    response = {'message': f'will be added to block {this_block}'}
+    return jsonify(response),201   # 201 is a http that means created or done
 
 def full_chain():
     ''' Return the full chain'''
@@ -85,6 +105,7 @@ def full_chain():
         'length' : len(blockchain.chain),
     }
     return jsonify(res), 200 # 200 means that our code works currectly
+
 
 if __name__ == '__main__' :
     app.run(host='0.0.0.0', port=sys.argv[1])
