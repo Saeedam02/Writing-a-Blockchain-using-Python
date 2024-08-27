@@ -1,8 +1,10 @@
 import json
 import sys
 import hashlib
+import requests
 from time import time 
 from uuid import uuid4
+from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 
 class BlockChain():
@@ -12,6 +14,7 @@ class BlockChain():
         self.chain =[]
         # current transactions
         self.current_trxs =[]
+        self.nodes = set() # use set to avoid adding duplicate nodes
         self.new_block(previous_hash = 1 , proof = 100) 
 
     def new_block(self, proof , previous_hash=None):
@@ -41,6 +44,52 @@ class BlockChain():
         block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
+    def register_node(self, address):
+        parsde_url = urlparse(address)
+        self.nodes.add(parsde_url.netloc)
+
+    def valid_chain(self, chain):
+        ''' Check if the chain is valid'''
+        last_block = chain[0]
+        current_index = 1
+        while current_index < len(chain):
+
+            block = chain[current_index]
+
+            if block['previous_hash'] != self.hash(last_block):
+                return False
+            
+            if not self.valid_proof(last_block['proof'], block['proof']):
+                return False
+            
+            last_block = block
+            current_index += 1
+
+        return True
+    
+    def resolve_conflicts(self):
+        ''' Checks all nodes and selects the best chain'''
+
+        neighbours = self.nodes
+        new_chain = None
+
+        max_length = len(self.chain)
+
+        for node in neighbours :
+            response = requests.get(f'http://{node}/chain')
+            if response.statuse_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                if length > max_length and self.valid_chain(chain):
+                    max_length = length
+                    new_chain = chain
+        if new_chain:
+            self.chain = new_chain
+            return True
+        
+        return False
+
+
     @property
     def last_block(self):
         ''' Return the last Block'''
@@ -66,7 +115,7 @@ node_id = str(uuid4())
 
 blockchain = BlockChain()
 
-@app.route('/mine' , methods=['Get'])
+@app.route('/mine' , methods=['Get']) # default methods is GET
 def mine():
     ''' This will mibe a block and 
     will add it to the chain
@@ -106,6 +155,34 @@ def full_chain():
     }
     return jsonify(res), 200 # 200 means that our code works currectly
 
+@app.route('/nodes/register' , methods=['POST'])
+def  register_node():
+    values = request.get_json()
+
+    nodes = values.get('nodes')
+    for node in nodes:
+        blockchain.register_node(node)
+
+        response = {
+            'message' : 'Node added' , 
+            'total nodes' : list(blockchain.nodes)
+        }
+        return jsonify(response) , 201
+
+@app.route('/nodes/resolve' , methods=['GET']) 
+def consensus():
+    replaced = blockchain.resolve_conflicts()
+    if replaced:
+        response = {
+            'message' : 'replaced',
+            'new_chain' : blockchain.chain ,
+        }
+    else:
+        response = {
+            'message' : 'I am the best',
+            'chain' : blockchain.chain ,
+        }
+    return jsonify(response) , 200
 
 if __name__ == '__main__' :
     app.run(host='0.0.0.0', port=sys.argv[1])
